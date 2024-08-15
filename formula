@@ -1,0 +1,194 @@
+let
+    vUrl = "http://localhost:4000",
+    vHeaders =[
+                  #"Method"="POST",
+                  #"Content-Type"="application/json"
+        ],
+    vContent=Text.ToBinary("{ ""query"": "" query GetInventory { suggi_getInventory { _id id createddate receiveddate dateofmanufacturing expirydate gst rate landingrate sellingprice subqty soldqty status cnStockproduct transportCharges otherCharges store_ref invoice {   invoiceno   invoicedate   po_ref   rate   total } productDetails {   name   category {     name   }   sub_category {     name   }   manufacturer {     name   } } supplier {   id   name   gstnumber } storeDetails { name vertical } } } "" }"),
+    Data = Web.Contents(vUrl,[Headers=vHeaders,Content=vContent]),
+    #"JSON" = Json.Document(Data),
+    data = JSON[data],
+    getInventory = data[suggi_getInventory],
+    #"Converted to Table" = Table.FromList(getInventory, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    #"Expanded Column2" = Table.ExpandRecordColumn(#"Converted to Table", "Column1", {"_id", "id", "createddate", "receiveddate", "dateofmanufacturing", "expirydate", "gst", "rate", "landingrate", "sellingprice", "subqty", "soldqty", "status", "cnStockproduct", "transportCharges", "otherCharges", "store_ref", "invoice", "productDetails", "supplier", "storeDetails"}, {"Column1._id", "Column1.id", "Column1.createddate", "Column1.receiveddate", "Column1.dateofmanufacturing", "Column1.expirydate", "Column1.gst", "Column1.rate", "Column1.landingrate", "Column1.sellingprice", "Column1.subqty", "Column1.soldqty", "Column1.status", "Column1.cnStockproduct", "Column1.transportCharges", "Column1.otherCharges", "Column1.store_ref", "Column1.invoice", "Column1.productDetails", "Column1.supplier", "Column1.storeDetails"}),
+    #"Expanded Column1.storeDetails1" = Table.ExpandRecordColumn(#"Expanded Column2", "Column1.storeDetails", {"name", "vertical"}, {"Column1.storeDetails.name", "Column1.storeDetails.vertical"}),
+    #"Expanded Column1.invoice" = Table.ExpandRecordColumn(#"Expanded Column1.storeDetails1", "Column1.invoice", {"invoiceno", "invoicedate", "po_ref", "rate", "total"}, {"Column1.invoice.invoiceno", "Column1.invoice.invoicedate", "Column1.invoice.po_ref", "Column1.invoice.rate", "Column1.invoice.total"}),
+    #"Expanded Column1.productDetails" = Table.ExpandRecordColumn(#"Expanded Column1.invoice", "Column1.productDetails", {"name", "category", "sub_category", "manufacturer"}, {"Column1.productDetails.name", "Column1.productDetails.category", "Column1.productDetails.sub_category", "Column1.productDetails.manufacturer"}),
+    #"Expanded Column1.supplier" = Table.ExpandRecordColumn(#"Expanded Column1.productDetails", "Column1.supplier", {"id", "name", "gstnumber"}, {"Column1.supplier.id", "Column1.supplier.name", "Column1.supplier.gstnumber"}),
+    #"Expanded Column1.productDetails.category" = Table.ExpandRecordColumn(#"Expanded Column1.supplier", "Column1.productDetails.category", {"name"}, {"Column1.productDetails.category.name"}),
+    #"Expanded Column1.productDetails.sub_category" = Table.ExpandRecordColumn(#"Expanded Column1.productDetails.category", "Column1.productDetails.sub_category", {"name"}, {"Column1.productDetails.sub_category.name"}),
+    #"Expanded Column1.productDetails.manufacturer" = Table.ExpandRecordColumn(#"Expanded Column1.productDetails.sub_category", "Column1.productDetails.manufacturer", {"name"}, {"Column1.productDetails.manufacturer.name"}),
+    #"Renamed Columns3" = Table.RenameColumns(#"Expanded Column1.productDetails.manufacturer",{{"Column1.landingrate", "landingrate"}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Renamed Columns3",{{"Column1._id", "_id"}, {"Column1.id", "id"}, {"Column1.createddate", "createddate"}, {"Column1.receiveddate", "receiveddate"}, {"Column1.dateofmanufacturing", "dateofmanufacturing"}, {"Column1.expirydate", "expirydate"}, {"Column1.gst", "gst%"}, {"Column1.rate", "purchasingprice_unit_xgst"}, {"Column1.sellingprice", "sellingprice_unit_igst"}, {"Column1.subqty", "subqty"}, {"Column1.soldqty", "soldqty"}, {"Column1.status", "status"}, {"Column1.cnStockproduct", "cnStockproduct"}, {"Column1.transportCharges", "transportCharges"}, {"Column1.otherCharges", "otherCharges"}, {"Column1.store_ref", "store_ref"}, {"Column1.invoice.invoiceno", "invoiceno"}, {"Column1.invoice.invoicedate", "invoicedate"}, {"Column1.invoice.po_ref", "po_ref"}, {"Column1.invoice.rate", "invoice_amount"}, {"Column1.invoice.total", "invoice_amount_xgst"}, {"Column1.productDetails.name", "product_name"}, {"Column1.productDetails.category.name", "category_name"}, {"Column1.productDetails.sub_category.name", "sub_category_name"}, {"Column1.productDetails.manufacturer.name", "manufacturer_name"}, {"Column1.supplier.id", "supplier_id"}, {"Column1.supplier.name", "supplier_name"}, {"Column1.supplier.gstnumber", "supplier_gstnumber"}}),
+    #"Changed Type18" = Table.TransformColumnTypes(#"Renamed Columns",{{"landingrate", type number}}),
+    #"Changed Type" = Table.TransformColumnTypes(#"Changed Type18",{{"createddate", type datetime}, {"receiveddate", type datetime}, {"dateofmanufacturing", type datetime}, {"expirydate", type datetime}, {"gst%", type number}, {"purchasingprice_unit_xgst", type number}, {"sellingprice_unit_igst", type number}, {"subqty", Int64.Type}, {"soldqty", Int64.Type}, {"cnStockproduct", type number}, {"transportCharges", type number}, {"otherCharges", type number}, {"invoicedate", type datetime}, {"invoice_amount", type number}, {"invoice_amount_xgst", type number}}),
+    #"Added Custom" = Table.AddColumn(#"Changed Type", "sellingprice_unit_xgst", each [sellingprice_unit_igst]/(1+([#"gst%"]/100))),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Added Custom",{{"sellingprice_unit_xgst", type number}}),
+    #"Reordered Columns" = Table.ReorderColumns(#"Changed Type1",{"_id", "id", "createddate", "receiveddate", "dateofmanufacturing", "expirydate", "gst%", "purchasingprice_unit_xgst", "sellingprice_unit_igst", "sellingprice_unit_xgst", "subqty", "soldqty", "status", "cnStockproduct", "transportCharges", "otherCharges", "store_ref", "invoiceno", "invoicedate", "po_ref", "invoice_amount", "invoice_amount_xgst", "product_name", "category_name", "sub_category_name", "manufacturer_name", "supplier_id", "supplier_name", "supplier_gstnumber"}),
+    #"Added Custom1" = Table.AddColumn(#"Reordered Columns", "FY", each if
+([invoicedate] is null)
+then 
+"None"
+else if
+([invoicedate] >= DateTime.FromText("04/01/2020") and [invoicedate] < DateTime.FromText("04/01/2021"))
+then 
+"FY20-21"
+else if 
+([invoicedate] >= DateTime.FromText("04/01/2021") and [invoicedate] < DateTime.FromText("04/01/2022"))
+then 
+"FY21-22"
+else if 
+([invoicedate] >= DateTime.FromText("04/01/2022") and [invoicedate] < DateTime.FromText("04/01/2023"))
+then 
+"FY22-23"
+else if 
+([invoicedate] >= DateTime.FromText("04/01/2023") and [invoicedate] < DateTime.FromText("04/01/2024"))
+then
+"FY23-24"
+else if 
+([invoicedate] >= DateTime.FromText("04/01/2024") and [invoicedate] < DateTime.FromText("04/01/2025"))
+then
+"FY24-25"
+else 
+"None"),
+    #"Added Custom21" = Table.AddColumn(#"Added Custom1", "returned_qty", each if [status] = "CreditNote"
+then [subqty]
+else 0),
+    #"Changed Type19" = Table.TransformColumnTypes(#"Added Custom21",{{"returned_qty", type number}}),
+    #"Added Custom2" = Table.AddColumn(#"Changed Type19", "available_qty", each [subqty]-([soldqty]+[returned_qty])),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Added Custom2",{{"available_qty", Int64.Type}}),
+    #"Added Custom3" = Table.AddColumn(#"Changed Type2", "current_inventory_value", each [available_qty]*[import requests
+import json
+from datetime import datetime, timedelta
+import pandas as pd
+
+payload = {
+    "query": """
+    query Territory {
+  suggi_getInventoryTer {
+    storeDetails {
+      territory {
+        name
+      }
+    }
+    qty
+    expirydate
+    status
+    rate
+    subqty
+    soldqty
+    productDetails {
+      category {
+        name
+      }
+    }
+    invoice {
+      invoicedate
+    }
+  }
+}
+    """,
+    "variables": {}
+}
+
+headers = {
+    'Content-Type': 'application/json'
+}
+
+url = "http://13.126.125.132:4000"
+response = requests.post(url, headers=headers, json=payload)
+
+data = response.json()["data"]["suggi_getInventoryTer"]
+
+df = pd.json_normalize(data)
+
+df['expirydate'] = pd.to_datetime(df['expirydate'])
+
+df['days_to_expiry'] = (df['expirydate'] - pd.Timestamp.now(tz='UTC')).dt.days
+
+conditions = [
+    # (df['days_to_expiry'] <= 0),
+    (df['days_to_expiry'] > 0) & (df['days_to_expiry'] <= 45),
+    (df['days_to_expiry'] > 45) & (df['days_to_expiry'] <= 90),
+    (df['days_to_expiry'] > 90) & (df['days_to_expiry'] <= 135),
+    (df['days_to_expiry'] > 135)
+]
+
+categories = ['1-45 days', '46-90 days', '91-135 days', '135+ days']
+
+df['expiry_category'] = pd.cut(df['days_to_expiry'], bins=[-float('inf'), 45, 90, 135, float('inf')], labels=categories)
+
+df['quantity'] = df['subqty'] - (df['soldqty'] - df['subqty'].where(df['status'] == "creditnote", 0))
+df['current_inventory_value'] = df['quantity'] * df['rate']
+grouped_df = df.groupby(['productDetails.category.name','expiry_category'])['current_inventory_value'].sum().reset_index()
+
+grouped_df.columns = ['Category', 'Expiry Category', 'Purchase Value']
+
+print(grouped_df)]),
+    #"Changed Type3" = Table.TransformColumnTypes(#"Added Custom3",{{"current_inventory_value", type number}}),
+    #"Added Custom4" = Table.AddColumn(#"Changed Type3", "sold_inventory_value", each [soldqty]*[purchasingprice_unit_xgst]),
+    #"Changed Type4" = Table.TransformColumnTypes(#"Added Custom4",{{"sold_inventory_value", type number}}),
+    #"Added Custom5" = Table.AddColumn(#"Changed Type4", "returned_inventory", each [returned_qty]*[purchasingprice_unit_xgst]),
+    #"Changed Type5" = Table.TransformColumnTypes(#"Added Custom5",{{"returned_inventory", type number}}),
+    #"Added Custom6" = Table.AddColumn(#"Changed Type5", "Custom", each  DateTime.Date(DateTime.FixedLocalNow()) - DateTime.Date([invoicedate])),
+    #"Changed Type6" = Table.TransformColumnTypes(#"Added Custom6",{{"Custom", type duration}}),
+    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type6",{{"Custom", "inventory_age_days"}}),
+    #"Added Custom7" = Table.AddColumn(#"Renamed Columns1", "inventory_age_months", each [inventory_age_days]/30),
+    #"Changed Type7" = Table.TransformColumnTypes(#"Added Custom7",{{"inventory_age_months", type duration}}),
+    #"Added Custom8" = Table.AddColumn(#"Changed Type7", "inventory_age_weeks", each [inventory_age_days]/7),
+    #"Reordered Columns1" = Table.ReorderColumns(#"Added Custom8",{"_id", "id", "createddate", "receiveddate", "dateofmanufacturing", "expirydate", "gst%", "purchasingprice_unit_xgst", "sellingprice_unit_igst", "sellingprice_unit_xgst", "subqty", "soldqty", "status", "cnStockproduct", "transportCharges", "otherCharges", "store_ref", "invoiceno", "invoicedate", "po_ref", "invoice_amount", "invoice_amount_xgst", "product_name", "category_name", "sub_category_name", "manufacturer_name", "supplier_id", "supplier_name", "supplier_gstnumber", "FY", "available_qty", "current_inventory_value", "sold_inventory_value", "returned_inventory", "inventory_age_days", "inventory_age_weeks", "inventory_age_months"}),
+    #"Changed Type8" = Table.TransformColumnTypes(#"Reordered Columns1",{{"inventory_age_weeks", type duration}}),
+    #"Renamed Columns2" = Table.RenameColumns(#"Changed Type8",{{"Column1.storeDetails.name", "store"}, {"Column1.storeDetails.vertical", "vertical"}}),
+    #"Added Custom10" = Table.AddColumn(#"Renamed Columns2", "expiry_clock", each DateTime.Date([expirydate]) - DateTime.Date(DateTime.FixedLocalNow())),
+    #"Changed Type10" = Table.TransformColumnTypes(#"Added Custom10",{{"expiry_clock", type duration}}),
+    #"Added Custom11" = Table.AddColumn(#"Changed Type10", "expiry_clock_stock", each if Text.Contains([status],"Stock")
+then [expiry_clock]
+else 0),
+    #"Changed Type11" = Table.TransformColumnTypes(#"Added Custom11",{{"expiry_clock_stock", Int64.Type}}),
+    #"Added Custom20" = Table.AddColumn(#"Changed Type11", "expiry_filter", each if [expiry_clock_stock] <= 0
+then "Expired"
+else if [expiry_clock_stock] <= 7
+then "< 1wk"
+else if [expiry_clock_stock] <=15
+then "1wk-2wk"
+else if [expiry_clock_stock] <= 30
+then "2wk-1m"
+else if [expiry_clock_stock] <= 90
+then "1m-3m"
+else if [expiry_clock_stock] <= 180
+then "3m-6m"
+else "> 6m"),
+    #"Added Custom9" = Table.AddColumn(#"Added Custom20", "exp_seq", each if [expiry_filter] = "Expired"
+then 0
+else if [expiry_filter] = "< 1wk"
+then 1
+else if [expiry_filter] = "1wk-2wk"
+then 2
+else if [expiry_filter] = "2wk-1m"
+then 3
+else if [expiry_filter] = "1m-3m"
+then 4
+else if [expiry_filter] = "3m-6m"
+then 5
+else if [expiry_filter] = "> 6m"
+then 6
+else "None"),
+    #"Filtered Rows" = Table.SelectRows(#"Added Custom9", each true),
+    #"Changed Type9" = Table.TransformColumnTypes(#"Filtered Rows",{{"exp_seq", type number}}),
+    #"Filtered Rows1" = Table.SelectRows(#"Changed Type9", each true),
+    #"Changed Type12" = Table.TransformColumnTypes(#"Filtered Rows1",{{"inventory_age_days", Int64.Type}}),
+    #"Duplicated Column" = Table.DuplicateColumn(#"Changed Type12", "store", "store - Copy"),
+    #"Split Column by Delimiter" = Table.SplitColumn(#"Duplicated Column", "store - Copy", Splitter.SplitTextByEachDelimiter({" "}, QuoteStyle.Csv, true), {"store - Copy.1", "store - Copy.2"}),
+    #"Changed Type13" = Table.TransformColumnTypes(#"Split Column by Delimiter",{{"store - Copy.1", type text}, {"store - Copy.2", type text}}),
+    #"Removed Columns" = Table.RemoveColumns(#"Changed Type13",{"store - Copy.2"}),
+    #"Renamed Columns4" = Table.RenameColumns(#"Removed Columns",{{"store - Copy.1", "First Store Name"}}),
+    #"Added Custom12" = Table.AddColumn(#"Renamed Columns4", "Average_Inventory_Age", each ([purchasingprice_unit_xgst] * [inventory_age_days] * [available_qty]) / List.Sum(#"Changed Type12"[current_inventory_value])),
+    #"Changed Type14" = Table.TransformColumnTypes(#"Added Custom12",{{"Average_Inventory_Age", type number}}),
+    #"Added Custom13" = Table.AddColumn(#"Changed Type14", "cndiff", each ([purchasingprice_unit_xgst]*[subqty]) - [cnStockproduct]),
+    #"Changed Type15" = Table.TransformColumnTypes(#"Added Custom13",{{"cndiff", type number}, {"returned_inventory", type number}, {"sold_inventory_value", type number}, {"returned_qty", type number}}),
+    #"Added Custom14" = Table.AddColumn(#"Changed Type15", "Current_Inventory(Selling_Price)", each [available_qty] * [sellingprice_unit_xgst]),
+    #"Changed Type16" = Table.TransformColumnTypes(#"Added Custom14",{{"Current_Inventory(Selling_Price)", type number}}),
+    #"Added Custom15" = Table.AddColumn(#"Changed Type16", "InvoiceDate_Relationship", each DateTime.Date([invoicedate])),
+    #"Changed Type17" = Table.TransformColumnTypes(#"Added Custom15",{{"InvoiceDate_Relationship", type date}})
+in
+    #"Changed Type17"
